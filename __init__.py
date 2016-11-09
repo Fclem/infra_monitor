@@ -199,8 +199,19 @@ class Checkers(object):
 	
 	@classmethod
 	def tcp(cls, check):
-		pass
-
+		assert isinstance(check, CheckObject)
+		from networking import test_tcp_connect
+		spl = check.check_data.split(' ')
+		host = spl[0]
+		port = spl[1]
+		return test_tcp_connect(host, port)
+	
+	@classmethod
+	def ping(cls, check):
+		assert isinstance(check, CheckObject)
+		from networking import is_host_online
+		return is_host_online(check.check_data)
+	
 
 class CheckObject(object):
 	_enabled = ''
@@ -211,7 +222,7 @@ class CheckObject(object):
 	_pass_d = ''
 	_id = None
 	
-	_checker_dict = {'url': Checkers.url, 'tcp': Checkers.tcp}
+	_checker_dict = {'url': Checkers.url, 'tcp': Checkers.tcp, 'ping': Checkers.ping}
 	
 	def __init__(self, a_tuple_list, res_id=None):
 		assert isinstance(a_tuple_list, list)
@@ -313,7 +324,8 @@ class MyConfig(ConfigObject):
 			if v.enabled:
 				res = v.check()
 				if update:
-					print "update not implemented"
+					# print "update not implemented"
+					pass
 				print v.name, ':', res
 
 

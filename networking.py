@@ -11,6 +11,8 @@ __date__ = '27/05/2016'
 def get_logger():
 	return getLogger(__name__)
 
+logger = get_logger()
+
 
 # clem on 20/08/2015
 def is_host_online(host, deadline=5):
@@ -28,6 +30,16 @@ def is_host_online(host, deadline=5):
 
 # clem 08/09/2016 moved here on 25/05/2016
 def test_tcp_connect(host, port, timeout=2):
+	try:
+		return _test_tcp_connect(host, port, timeout)
+	except socket.timeout:
+		logger.warning('connect %s:%s : Time-out' % (host, port))
+	except socket.error as e:
+		logger.warning('connect %s:%s : %s' % (host, port, e[1]))
+	return False
+	
+	
+def _test_tcp_connect(host, port, timeout=2):
 	""" Test if TCP can connect to target host on specified port
 
 	:param host: ip address or FQDN of the target host
