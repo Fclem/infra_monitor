@@ -190,6 +190,18 @@ class ConfigObject(object):
 		self.config.write(open(self.config_file_path, 'w'))
 		
 
+class Checkers(object):
+	@classmethod
+	def url(cls, check):
+		assert isinstance(check, CheckObject)
+		from networking import test_url
+		return test_url(check.check_data)
+	
+	@classmethod
+	def tcp(cls, check):
+		pass
+
+
 class CheckObject(object):
 	_enabled = ''
 	_name = ''
@@ -198,6 +210,8 @@ class CheckObject(object):
 	_pass_t = ''
 	_pass_d = ''
 	_id = None
+	
+	_checker_dict = {'url': Checkers.url, 'tcp': Checkers.tcp}
 	
 	def __init__(self, a_tuple_list, res_id=None):
 		assert isinstance(a_tuple_list, list)
@@ -243,6 +257,14 @@ class CheckObject(object):
 			a_dict.update({each: self.__getattribute__(each)})
 		return a_dict
 
+	def check(self):
+		if self.enabled:
+			if self.check_type in self._checker_dict.keys():
+				return self._checker_dict[self.check_type](self)
+			else:
+				print 'There is no %s checker' % self.check_type
+		return False
+
 	def __str__(self):
 		return str(self.data_dict)
 
@@ -284,6 +306,15 @@ class MyConfig(ConfigObject):
 	def show_checks(self):
 		for k, v in self.checks_dict.iteritems():
 			print k, ':', v
+			
+	def check_all(self, update=True):
+		for k, v in self.checks_dict.iteritems():
+			assert isinstance(v, CheckObject)
+			if v.enabled:
+				res = v.check()
+				if update:
+					print "update not implemented"
+				print v.name, ':', res
 
 
 check_def = AutoOrderedDict(check_def, check_conf_items)
@@ -299,61 +330,109 @@ class HTTPMethods(enumerate):
 	all = [GET, POST, PATCH, DELETE]
 
 
-# components/[component_id].json
-def sender(endpoint, data=dict(), method=HTTPMethods.GET):
-	""" send a query to the StatusPage.io api using conf.api_bas_url
+class StatusPageIoInterface(object):
+	_conf = None
 	
-	:type endpoint: str
-	:type data: dict
-	:type method: str
-	"""
-	import httplib, urllib, time
-	ts = int(time.time())
-	assert isinstance(data, dict)
-	assert method in HTTPMethods.all
-	params = urllib.urlencode(data)
-	headers = {"Content-Type": "application/x-www-form-urlencoded", "Authorization": "OAuth " + conf.api_key}
+	COMPONENT_BASE_URL = 'components/%s.json'
+	COMPONENTS_URL = 'components.json'
 	
-	conn = httplib.HTTPSConnection(conf.api_base_url)
-	conn.request(method, BASE_END_POINT_URL + endpoint, params, headers)
-	response = conn.getresponse()
+	def __init__(self, inst_conf=MyConfig()):
+		self._conf = inst_conf
 	
-	print "Submitted %s to %s" % (data, endpoint)
-	return response
+	# components/[component_id].json
+	def send(self, endpoint, data=dict(), method=HTTPMethods.GET):
+		""" send a query to the StatusPage.io api using conf.api_bas_url
 
-
-def update_component(component_id, data):
-	return sender('components/%s.json' % component_id, data, HTTPMethods.PATCH)
-
-
-def get_status(component_id):
-	return json.load(sender('components/%s.json' % component_id, method=HTTPMethods.GET))['status']
-
-
-def components_list():
-	return json.load(sender('components.json'))
-
-
-def show_components():
-	a_list = components_list()
-	for each in a_list:
-		print each['id'], each
+		:type endpoint: str
+		:type data: dict
+		:type method: str
+		"""
+		import httplib, urllib, time
+		ts = int(time.time())
+		assert isinstance(data, dict)
+		assert method in HTTPMethods.all
+		params = urllib.urlencode(data)
+		headers = { "Content-Type": "application/x-www-form-urlencoded", "Authorization": "OAuth " + self._conf.api_key }
 		
+		conn = httplib.HTTPSConnection(self._conf.api_base_url)
+		conn.request(method, BASE_END_POINT_URL + endpoint, params, headers)
+		response = conn.getresponse()
+		
+		print "Submitted %s to %s" % (data, endpoint)
+		return response
+	
+	@property
+	def _component_base_url(self):
+		return self.COMPONENT_BASE_URL
+	
+	def _component_url(self, component_id):
+		return self._component_base_url % component_id
+	
+	def component_update(self, component_id, data):
+		return self.send(self._component_url(component_id), data, HTTPMethods.PATCH)
 
-def make_config():
-	""" fetch all the components from StatusPage.io and write then in the config file """
-	a_list = components_list()
-	for each in a_list:
-		sec_title = '%s%s' % (conf.SECTION_CHECKS_UNIT_PREFIX, each['id'])
-		if sec_title not in conf.sections:
+	def get_component_status(self, component_id):
+		return json.load(self.send(self._component_url(component_id), method=HTTPMethods.GET))['status']
+	
+	@property
+	def components_list(self):
+		return json.load(self.send(self.COMPONENTS_URL))
+	
+	def show_components(self):
+		a_list = self.components_list
+		for each in a_list:
+			print each['id'], each
+	
+	def _gen_config_generator(self, callbacks):
+		""" fetch all the components from StatusPage.io and write then in the config file
+		
+		:param callbacks:
+		:type callbacks: tuple[callable[str], callable[str, k, v], callable]
+		"""
+		assert isinstance(callbacks, tuple) and len(callbacks) == 3 and callable(callbacks[0]) and \
+				callable(callbacks[1]) and callable(callbacks[2])
+		
+		header_callback = callbacks[0]
+		inner_callback = callbacks[1]
+		footer_callback = callbacks[2]
+		
+		a_list = self.components_list
+		for each in a_list:
+			sec_title = '%s%s' % (conf.SECTION_CHECKS_UNIT_PREFIX, each['id'])
+			if sec_title not in conf.sections:
+				header_callback(sec_title)
+				for k, v in check_def.iteritems():
+					inner_callback(sec_title, k, str(each.get(k, v)))
+				footer_callback()
+		conf.save()
+	
+	def show_config(self):
+		""" fetch all the components from StatusPage.io and display then as ini structured data """
+		def header(sec_title):
+			print '[%s]' % sec_title
+			
+		def inner(_, k, val):
+			print k, '=', val
+			
+		def footer():
+			print ''
+		
+		self._gen_config_generator((header, inner, footer))
+	
+	def write_config(self):
+		""" fetch all the components from StatusPage.io and write then in the config file """
+		
+		def header(sec_title):
 			conf.config.add_section(sec_title)
-			# print '[%s]' % sec_title
-			for k, v in check_def.iteritems():
-				val = each.get(k, v)
-				# print k, '=', val
-				conf.config.set(sec_title, k, str(val))
-			# print ''
-	conf.save()
+		
+		def inner(sec_title, k, val):
+			conf.config.set(sec_title, k, str(val))
+		
+		def footer():
+			pass
+		
+		self._gen_config_generator((header, inner, footer))
+		conf.save()
 
 
 def check_container(container_name):
@@ -362,3 +441,5 @@ def check_container(container_name):
 
 def check_url(url):
 	pass
+
+interface = StatusPageIoInterface(conf)
