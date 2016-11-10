@@ -213,6 +213,13 @@ class Checkers(object):
 		return is_host_online(check.check_data)
 	
 
+class CheckStates(enumerate):
+	OPERATIONAL = 'operational'
+	DEGRADED = 'degraded_performance'
+	PARTIAL_OUT = 'partial_outage'
+	MAJOR_OUT = 'major_outage'
+
+
 class CheckObject(object):
 	_enabled = ''
 	_name = ''
@@ -304,30 +311,6 @@ class MyConfig(ConfigObject):
 	def page_id(self):
 		return self.get(self.KEY_PAGE_ID)
 
-	@property
-	def checks_dict(self):
-		""" return a dictionary of all the available checks """
-		res = dict()
-		for each in self.sections.filter(self.SECTION_CHECKS_UNIT_PREFIX):
-			check_id = SupStr(each) - self.SECTION_CHECKS_UNIT_PREFIX
-			res.update({check_id: CheckObject(self.section(each), check_id)})
-		
-		return res
-
-	def show_checks(self):
-		for k, v in self.checks_dict.iteritems():
-			print k, ':', v
-			
-	def check_all(self, update=True):
-		for k, v in self.checks_dict.iteritems():
-			assert isinstance(v, CheckObject)
-			if v.enabled:
-				res = v.check()
-				if update:
-					# print "update not implemented"
-					pass
-				print v.name, ':', res
-
 
 check_def = AutoOrderedDict(check_def, check_conf_items)
 conf = MyConfig()
@@ -364,7 +347,7 @@ class StatusPageIoInterface(object):
 		assert isinstance(data, dict)
 		assert method in HTTPMethods.all
 		params = urllib.urlencode(data)
-		headers = { "Content-Type": "application/x-www-form-urlencoded", "Authorization": "OAuth " + self._conf.api_key }
+		headers = {"Content-Type": "application/x-www-form-urlencoded", "Authorization": "OAuth " + self._conf.api_key}
 		
 		conn = httplib.HTTPSConnection(self._conf.api_base_url)
 		conn.request(method, BASE_END_POINT_URL + endpoint, params, headers)
@@ -446,12 +429,46 @@ class StatusPageIoInterface(object):
 		self._gen_config_generator((header, inner, footer))
 		conf.save()
 
-
-def check_container(container_name):
-	pass
-
-
-def check_url(url):
-	pass
-
+	def update_check(self, check, state):
+		""" Update the status of one check, state has to be a value of CheckStates
+		:type check: CheckObject
+		:type state: str
+		:rtype:
+		"""
+		return self.component_update(check.id, {'component[status]': state})
+		
+	@property
+	def checks_dict(self):
+		""" return a dictionary of all the available checks """
+		res = dict()
+		for each in self._conf.sections.filter(self._conf.SECTION_CHECKS_UNIT_PREFIX):
+			check_id = SupStr(each) - self._conf.SECTION_CHECKS_UNIT_PREFIX
+			res.update({check_id: CheckObject(self._conf.section(each), check_id) })
+		
+		return res
+	
+	# TODO : make it a decorator
+	def __check_apply(self, callback):
+		assert callable(callback)
+		for k, v in self.checks_dict.iteritems():
+			callback(k, v)
+	
+	def show_checks(self):
+		def sub(k, v):
+			print k, ':', v
+		self.__check_apply(sub)
+	
+	def check_all(self, update=False):
+		def sub(_, v):
+			assert isinstance(v, CheckObject)
+			if v.enabled:
+				res = v.check()
+				print v.name, ':', res
+				if update:
+					self.update_check(v, CheckStates.OPERATIONAL if res else CheckStates.MAJOR_OUT)
+		self.__check_apply(sub)
+		
+	def update_all(self):
+		return self.check_all(True)
+	
 interface = StatusPageIoInterface(conf)
