@@ -1,196 +1,40 @@
-from ConfigParser import SafeConfigParser, NoSectionError, NoOptionError
-from logging import getLogger
-from os.path import isfile, basename
-from collections import OrderedDict
+#!/usr/bin/python
+from utilz import *
+from time import sleep
+from threading import Thread
 import json
+
+__author__ = 'clement.fiere@helsinki.fi'
+__date__ = '09/11/2016'
 
 check_conf_items = ['enabled', 'name', 'type', 'data', 'pass_t', 'pass_d']
 check_def = {'enabled': 0, 'name': '', 'type': 'none', 'data': '', 'pass_t': '', 'pass_d': ''}
 
 
-class SupStr(str):
-	""" string that supports minus operation """
-	_empty = ''
-	
-	def __init__(self, string=_empty):
-		super(SupStr, self).__init__(string)
-		
-	def __sub__(self, other):
-		""" minus operation as remove substring """
-		assert isinstance(other, str)
-		return self.replace(other, self._empty)
-	
-
-class EnsList(list):
-	""" list that supports minus and plus operations as in ensemble deprived and union """
-	_empty = iter(())
-	
-	def __init__(self, iterable=_empty):
-		super(EnsList, self).__init__(iterable)
-	
-	def __sub__(self, other):
-		""" as deprived ensemble operation """
-		res = self.__class__(self._empty)
-		assert isinstance(other, list)
-		for each in self:
-			if each not in other:
-				res.append(each)
-		return res
-	
-	def __add__(self, other):
-		""" as union ensemble operation """
-		res = self.__class__(self._empty)
-		assert isinstance(other, list)
-		for each in self:
-			if each not in other:
-				res.append(each)
-		for each in other:
-			if each not in self:
-				res.append(each)
-		return res
-	
-	def filter(self, contains):
-		""" returns only items of the list that contains a specific string """
-		res = self.__class__(self._empty)
-		for each in self:
-			if contains in each:
-				res.append(each)
-		return res
-	
-
-class ConfigFileNotFound(IOError):
-	pass
+#########
+# ENUMs #
+#########
+class CheckStates(enumerate):
+	OPERATIONAL = 'operational'
+	DEGRADED = 'degraded_performance'
+	PARTIAL_OUT = 'partial_outage'
+	MAJOR_OUT = 'major_outage'
 
 
-class AutoOrderedDict(OrderedDict):
-	'Store items in the order the keys were last added, and create sorted dicts, from dicts and key order list'
-	
-	def __init__(self, a_dict=dict(), order_list=list()):
-		super(AutoOrderedDict, self).__init__()
-		if a_dict and order_list: # values in same order as the list of keys
-			for each in order_list:
-				if each in a_dict:
-					self[each] = a_dict[each]
-		elif a_dict and not order_list: # values in same "order" as the original dict
-			for k, v in a_dict.iteritems():
-				self[k] = v
-		elif order_list and not a_dict: # order without values, save the order, init all value to None
-			for each in order_list:
-				self[each] = None
-	
-	def __setitem__(self, key, value):
-		if key in self:
-			del self[key]
-		OrderedDict.__setitem__(self, key, value)
+class HTTPMethods(enumerate):
+	GET = 'GET'
+	POST = 'POST'
+	PATCH = 'PATCH'
+	DELETE = 'DELETE'
+	all = [GET, POST, PATCH, DELETE]
 
 
-# imported and edited from https://github.com/Fclem/isbio2/blob/master/isbio/breeze/non_db_objects.py # ae7abac : 428
-class ConfigObject(object):
-	_not = "Class %s doesn't implement %s()"
-	CONFIG_GENERAL_SECTION = 'DEFAULT'
-	__config = None
-	label = ''
-	name = ''
-	
-	def __unicode__(self): # Python 3: def __str__(self):
-		return '%s (%s)' % (self.label, self.name)
-	
-	def __init__(self, config_file, name='', label=''):
-		self.config_file_path = config_file
-		self.name = name
-		self.label = label
-	
-	# clem 17/05/2016
-	@property
-	def log(self):
-		return getLogger()
-	
-	# clem 27/05/2016
-	def _load_config(self):
-		""" Load the config file in a ConfigParser.SafeConfigParser object """
-		config = SafeConfigParser()
-		config.readfp(open(self.config_file_path))
-		self.log.debug(
-			'Config : loaded and parsed %s / %s ' % (basename(self.config_file_path), self.__class__.__name__))
-		return config
-	
-	@property
-	def config(self):
-		""" auto loading and caching of the whole configuration object for this ConfigObject """
-		if not self.__config: # instance level caching
-			if isfile(self.config_file_path):
-				self.__config = self._load_config()
-			else:
-				msg = 'Config file %s not found' % self.config_file_path
-				self.log.error(msg)
-				raise ConfigFileNotFound(msg)
-		return self.__config
-	
-	# clem 27/05/2016
-	def get_value(self, section, option):
-		""" get a string value from the config file with error handling (i.e. config.get() )
-		
-		:param section: name of the section
-		:type section: basestring
-		:param option: name of the option value to get
-		:type option: basestring
-		:return: the option value
-		:rtype: str
-		:raise: self.ConfigParser.NoSectionError, AttributeError, self.ConfigParser.NoOptionError
-		"""
-		try:
-			return self.config.get(section, option)
-		except (NoSectionError, AttributeError, NoOptionError) as e:
-			self.log.warning('While parsing file ')
-			raise
-	
-	def get(self, property_name, section=None):
-		""" get a string value from the config file with error handling (i.e. config.get() )
-
-		:param property_name: name of the option value to get
-		:type property_name: basestring
-		:param section: name of the section
-		:type section: basestring
-		:return: the option value
-		:rtype: str
-		:raise: self.ConfigParser.NoSectionError, AttributeError, self.ConfigParser.NoOptionError
-		"""
-		if not section:
-			section = self.CONFIG_GENERAL_SECTION
-		return self.get_value(section, property_name)
-
-	@property
-	def sections(self):
-		""" same as ConfigParser function except that it returns a custom list that supports - and + ensemble operation
-
-		:rtype: EnsList
-		"""
-		return EnsList(self.config.sections())
-
-	def _items(self, section, raw=False, x_vars=None):
-		""" same as ConfigParser function except that it returns a custom list that supports - and + ensemble operation
-		
-		:type section: str
-		:type raw: bool
-		:type x_vars:
-		:rtype: EnsList
-		"""
-		return EnsList(self.config.items(section, raw, x_vars))
-		
-	def section(self, section_name=CONFIG_GENERAL_SECTION):
-		""" same as ConfigParser function except that it gives items of a specific section excluding those of DEFAULT
-
-		:type section_name: str
-		:rtype: EnsList
-		"""
-		exclude = self._items(self.CONFIG_GENERAL_SECTION) if section_name != self.CONFIG_GENERAL_SECTION else list()
-		return self._items(section_name) - exclude
-
-	def save(self):
-		self.config.write(open(self.config_file_path, 'w'))
-		
+##################
+# ACTUAL OBJECTS #
+##################
 
 class Checkers(object):
+	""" the actual checks functions """
 	@classmethod
 	def url(cls, check):
 		assert isinstance(check, CheckObject)
@@ -211,16 +55,10 @@ class Checkers(object):
 		assert isinstance(check, CheckObject)
 		from networking import is_host_online
 		return is_host_online(check.check_data)
-	
-
-class CheckStates(enumerate):
-	OPERATIONAL = 'operational'
-	DEGRADED = 'degraded_performance'
-	PARTIAL_OUT = 'partial_outage'
-	MAJOR_OUT = 'major_outage'
 
 
-class CheckObject(object):
+class CheckObject(object): # Thread Safe
+	""" a Thread Safe check object representing a CHECK config entry with its own check() function and status memory """
 	_enabled = ''
 	_name = ''
 	_type = ''
@@ -228,15 +66,22 @@ class CheckObject(object):
 	_pass_t = ''
 	_pass_d = ''
 	_id = None
+	_last_status = None
+	_thread_lock = None
+	ON_TEXT = 'ONLINE'
+	OFF_TEXT = 'OFFLINE'
+	UNK_TEXT = 'UNKNOWN'
 	
 	_checker_dict = {'url': Checkers.url, 'tcp': Checkers.tcp, 'ping': Checkers.ping}
 	
-	def __init__(self, a_tuple_list, res_id=None):
+	def __init__(self, a_tuple_list, res_id=None): # Thread Safe
 		assert isinstance(a_tuple_list, list)
-		self.__dict__.update(check_def)
-		for each in a_tuple_list:
-			self.__dict__['_%s' % each[0]] = each[1] or check_def.get(each[0], '')
-		self._id = res_id
+		self._thread_lock = AutoLock()
+		with self._thread_lock as _:
+			self.__dict__.update(check_def)
+			for each in a_tuple_list:
+				self.__dict__['_%s' % each[0]] = each[1] or check_def.get(each[0], '')
+			self._id = res_id
 	
 	@property
 	def id(self):
@@ -275,19 +120,39 @@ class CheckObject(object):
 			a_dict.update({each: self.__getattribute__(each)})
 		return a_dict
 
-	def check(self):
+	# clem 10/11/2016
+	@property
+	def last_status(self):
+		# if not self._last_status:
+		# 	self.check()
+		return self._last_status
+	
+	# clem 10/11/2016
+	def status_text(self, status):
+		return self.ON_TEXT if status else self.OFF_TEXT if status is not None else self.UNK_TEXT
+
+	# clem 10/11/2016
+	@property
+	def textual_status(self):
+		return self.status_text(self.last_status)
+
+	def check(self):  # Thread Safe
+		status = False
 		if self.enabled:
 			if self.check_type in self._checker_dict.keys():
-				return self._checker_dict[self.check_type](self)
+				status = self._checker_dict[self.check_type](self)
 			else:
-				print 'There is no %s checker' % self.check_type
-		return False
+				print 'There is no "%s" checker' % self.check_type
+		with self._thread_lock as _:
+			self._last_status = status
+		return self._last_status
 
 	def __str__(self):
 		return str(self.data_dict)
 
 
 class MyConfig(ConfigObject):
+	""" a concrete ConfigObject for this specific project """
 	FILE_NAME = 'config.ini'
 	
 	KEY_API_KEY = 'api_key'
@@ -312,38 +177,43 @@ class MyConfig(ConfigObject):
 		return self.get(self.KEY_PAGE_ID)
 
 
+class Component(object):
+	"""
+	ypkdj35tpnkz {u'status': u'operational', u'description': None, u'created_at': u'2016-10-28T09:34:54.006Z',
+	u'updated_at': u'2016-11-10T13:56:54.417Z', u'position': 3, u'group_id': u'fmdlrkh6h12q', u'page_id':
+	u'8g2t7p13fmp8', u'id': u'ypkdj35tpnkz', u'name': u'CAS'}
+	"""
+
+
 check_def = AutoOrderedDict(check_def, check_conf_items)
 conf = MyConfig()
 BASE_END_POINT_URL = '/v1/pages/%s/' % conf.page_id
 
 
-class HTTPMethods(enumerate):
-	GET = 'GET'
-	POST = 'POST'
-	PATCH = 'PATCH'
-	DELETE = 'DELETE'
-	all = [GET, POST, PATCH, DELETE]
-
-
 class StatusPageIoInterface(object):
+	""" Interface between configured checks and StatusPage.io components """
 	_conf = None
 	
 	COMPONENT_BASE_URL = 'components/%s.json'
 	COMPONENTS_URL = 'components.json'
 	
+	_check_cache = None
+	
 	def __init__(self, inst_conf=MyConfig()):
 		self._conf = inst_conf
 	
-	# components/[component_id].json
-	def send(self, endpoint, data=dict(), method=HTTPMethods.GET):
+	def send(self, endpoint, data=None, method=HTTPMethods.GET):
 		""" send a query to the StatusPage.io api using conf.api_bas_url
 
 		:type endpoint: str
 		:type data: dict
 		:type method: str
 		"""
-		import httplib, urllib, time
-		ts = int(time.time())
+		import httplib
+		import urllib
+		# import time
+		# ts = int(time.time())
+		data = data or dict()
 		assert isinstance(data, dict)
 		assert method in HTTPMethods.all
 		params = urllib.urlencode(data)
@@ -429,46 +299,125 @@ class StatusPageIoInterface(object):
 		self._gen_config_generator((header, inner, footer))
 		conf.save()
 
-	def update_check(self, check, state):
+	def update_check(self, check_instance, state):
 		""" Update the status of one check, state has to be a value of CheckStates
-		:type check: CheckObject
+		
+		:type check_instance: CheckObject
 		:type state: str
 		:rtype:
 		"""
-		return self.component_update(check.id, {'component[status]': state})
+		assert isinstance(check_instance, CheckObject)
+		return self.component_update(check_instance.id, {'component[status]': state})
+	
+	# clem 10/11/2016
+	def set_check_value(self, check_instance, value=False):
+		""" Set the check component value to On or Off
 		
+		:type check_instance: CheckObject
+		:type value: bool
+		"""
+		assert isinstance(check_instance, CheckObject)
+		self.update_check(check_instance, CheckStates.OPERATIONAL if value else CheckStates.MAJOR_OUT)
+	
 	@property
 	def checks_dict(self):
 		""" return a dictionary of all the available checks """
-		res = dict()
-		for each in self._conf.sections.filter(self._conf.SECTION_CHECKS_UNIT_PREFIX):
-			check_id = SupStr(each) - self._conf.SECTION_CHECKS_UNIT_PREFIX
-			res.update({check_id: CheckObject(self._conf.section(each), check_id) })
-		
-		return res
+		if not self._check_cache:
+			res = dict()
+			for each in self._conf.sections.filter(self._conf.SECTION_CHECKS_UNIT_PREFIX):
+				check_id = SupStr(each) - self._conf.SECTION_CHECKS_UNIT_PREFIX
+				res.update({check_id: CheckObject(self._conf.section(each), check_id) })
+			self._check_cache = res
+		return self._check_cache
 	
 	# TODO : make it a decorator
-	def __check_apply(self, callback):
+	def __check_apply(self, callback, threading=False):
 		assert callable(callback)
-		for k, v in self.checks_dict.iteritems():
-			callback(k, v)
+		for key, check_instance in self.checks_dict.iteritems():
+			if not threading:
+				callback(key, check_instance)
+			else:
+				Thread(target=callback, args=(key, check_instance)).start()
 	
 	def show_checks(self):
-		def sub(k, v):
-			print k, ':', v
+		def sub(key, check_instance):
+			print key, ':', check_instance
 		self.__check_apply(sub)
 	
-	def check_all(self, update=False):
-		def sub(_, v):
-			assert isinstance(v, CheckObject)
-			if v.enabled:
-				res = v.check()
-				print v.name, ':', res
+	def check_all(self, update=False, threading=True):
+		def sub(_, check_instance):
+			assert isinstance(check_instance, CheckObject)
+			if check_instance.enabled:
+				old_status = check_instance.last_status
+				new_status = check_instance.check()
 				if update:
-					self.update_check(v, CheckStates.OPERATIONAL if res else CheckStates.MAJOR_OUT)
-		self.__check_apply(sub)
+					if new_status != old_status:
+						old_stat_text = check_instance.status_text(old_status)
+						old_stat_text = TermColoring.fail(old_stat_text) if not old_status else TermColoring.ok_green(
+							old_stat_text)
+						
+						new_stat_text = check_instance.textual_status
+						new_stat_text = TermColoring.fail(new_stat_text) if not new_status else \
+							TermColoring.ok_green(new_stat_text)
+						print '%s went from %s to %s' % \
+							(TermColoring.underlined(check_instance.name), old_stat_text, new_stat_text)
+						self.set_check_value(check_instance, new_status)
+				else:
+					print check_instance.name, ':', new_status
+		self.__check_apply(sub, threading)
 		
 	def update_all(self):
 		return self.check_all(True)
 	
-interface = StatusPageIoInterface(conf)
+	# clem 10/11/2016
+	def init_all_check_down(self):
+		def sub(_, check_instance):
+			assert isinstance(check_instance, CheckObject)
+			# check_instance._last_status = False
+			self.update_check(check_instance, CheckStates.PARTIAL_OUT)
+		self.__check_apply(sub)
+
+
+# clem 10/11/2016
+class Watcher(object):
+	""" a static class that monitors indefinitely all enabled checks and update them at a specific interval """
+	_interface = StatusPageIoInterface(conf)
+	# _interface.init_all_check_down()
+	_counter = 0
+	_wait_interval = 10. # in seconds
+	_wait_resolution = .5 # in seconds
+	_timer = _wait_interval
+	
+	@classmethod
+	def _reset_timer(cls):
+		cls._timer = cls._wait_interval
+	
+	@classmethod
+	def _wait(cls):
+		""" waiting function with incremental sleep duration of _wait_resolution and display of remaining time """
+		cls._reset_timer()
+		total_wait = cls._timer
+		base_text = 'next update in %s sec ...' # % total_wait
+		with IncPrint() as term:
+			term.put(base_text % total_wait)
+			while cls._timer > 0:
+				term.put(base_text % cls._timer)
+				sleep(cls._wait_resolution)
+				cls._timer -= cls._wait_resolution
+	
+	@classmethod # TODO make a loop decorator
+	def loop(cls):
+		try:
+			while True:
+				cls._counter += 1
+				print 'Checking round %s ...' % cls._counter
+				Thread(target=cls._interface.update_all).start() # Thread maybe not so useful
+				# cls._interface.update_all()
+				cls._wait()
+		except KeyboardInterrupt:
+			print 'Exiting'
+			return False
+
+if __name__ == '__main__':
+	# runs the watcher loop
+	Watcher.loop()
