@@ -80,6 +80,25 @@ class AutoOrderedDict(OrderedDict):
 			del self[key]
 		OrderedDict.__setitem__(self, key, value)
 
+
+# clem 10/11/2016
+class SpecialEnum(object):
+	@property
+	def _list_enum_values(self):
+		a_list = list()
+		for key, value in self.__class__.__dict__.iteritems():
+			if not key.startswith('_') and key.upper() == key:
+				a_list.append(value)
+		return a_list
+	
+	@property
+	def _all(self):
+		return self._list_enum_values
+	
+	def __contains__(self, item):
+		return item in self._all
+	
+
 ##################
 # HELPER OBJECTS #
 ##################
@@ -130,31 +149,31 @@ class TermColoring(enumerate):
 	
 	@classmethod
 	def ok_blue(cls, text):
-		return cls.OK_BLUE + text + cls.END_C
+		return cls.OK_BLUE + str(text) + cls.END_C
 	
 	@classmethod
 	def ok_green(cls, text):
-		return cls.OK_GREEN + text + cls.END_C
+		return cls.OK_GREEN + str(text) + cls.END_C
 	
 	@classmethod
 	def fail(cls, text):
-		return cls.FAIL + text + cls.END_C
+		return cls.FAIL + str(text) + cls.END_C
 	
 	@classmethod
 	def warning(cls, text):
-		return cls.WARNING + text + cls.END_C
+		return cls.WARNING + str(text) + cls.END_C
 	
 	@classmethod
 	def header(cls, text):
-		return cls.HEADER + text + cls.END_C
+		return cls.HEADER + str(text) + cls.END_C
 	
 	@classmethod
 	def bold(cls, text):
-		return cls.BOLD + text + cls.END_C
+		return cls.BOLD + str(text) + cls.END_C
 	
 	@classmethod
 	def underlined(cls, text):
-		return cls.UNDERLINE + text + cls.END_C
+		return cls.UNDERLINE + str(text) + cls.END_C
 
 
 ################
