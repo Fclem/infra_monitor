@@ -1,5 +1,6 @@
 # infra_monitor
 a generic services monitoring system that updates StatusPage.io components
+
 Checks are loaded from `config.ini`, and once `api_key`, `page_id` and `api_base` are filled in this configuration file, you can generate a list of checks using  
 ```python
 StatusPageIoInterface().write_config()
