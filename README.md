@@ -5,10 +5,10 @@ Checks are loaded from `config.ini`, and once `api_key`, `page_id` and `api_base
 StatusPageIoInterface().write_config()
 ```
 
-## Currently supported checks :
+## Currently supported checks types :
  * `url` : if HTTP GET to *url* returns HTTP 200
  * `tcp` : if connection to TCP *host port* is successful
  * `ping` : if remote *host* replies to ICMP ping (through system's ping command)
 
-## Projected supported checks :
- * docker : if a named docker container is running or not
+## To be supported checks types :
+ * `docker` : if a named docker container is running
