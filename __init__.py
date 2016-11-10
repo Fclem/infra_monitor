@@ -14,19 +14,18 @@ check_def = {'enabled': 0, 'name': '', 'type': 'none', 'data': '', 'pass_t': '',
 #########
 # ENUMs #
 #########
-class CheckStates(enumerate):
+class CheckStates(SpecialEnum):
 	OPERATIONAL = 'operational'
 	DEGRADED = 'degraded_performance'
 	PARTIAL_OUT = 'partial_outage'
 	MAJOR_OUT = 'major_outage'
 
 
-class HTTPMethods(enumerate):
+class HTTPMethods(SpecialEnum):
 	GET = 'GET'
 	POST = 'POST'
 	PATCH = 'PATCH'
 	DELETE = 'DELETE'
-	all = [GET, POST, PATCH, DELETE]
 
 
 ##################
@@ -55,6 +54,13 @@ class Checkers(object):
 		assert isinstance(check, CheckObject)
 		from networking import is_host_online
 		return is_host_online(check.check_data)
+	
+	# clem 10/11/2016
+	@classmethod # TODO
+	def docker(cls, check):
+		assert isinstance(check, CheckObject)
+		# import DockerClient
+		return False
 
 
 class CheckObject(object): # Thread Safe
@@ -177,18 +183,53 @@ class MyConfig(ConfigObject):
 		return self.get(self.KEY_PAGE_ID)
 
 
-# TODO
+# clem 10/10/2016
 class Component(object):
 	"""
 	ypkdj35tpnkz {u'status': u'operational', u'description': None, u'created_at': u'2016-10-28T09:34:54.006Z',
 	u'updated_at': u'2016-11-10T13:56:54.417Z', u'position': 3, u'group_id': u'fmdlrkh6h12q', u'page_id':
-	u'8g2t7p13fmp8', u'id': u'ypkdj35tpnkz', u'name': u'CAS'}
+	u'', u'id': u'', u'name': u'CAS'}
 	"""
+	_raw_data = dict()
+	_status = ''
+	_id = ''
+	_name = ''
+	
+	def __init__(self, a_dict=None):
+		if a_dict:
+			self._raw_data = a_dict
+			self._status = a_dict.get('status', '')
+			self._id = a_dict.get('id', '')
+			self._name = a_dict.get('name', '')
+	
+	@property
+	def status(self):
+		return self._status
+	
+	@status.setter
+	def status(self, value):
+		assert value in CheckStates()
+		self._status = value
+	
+	@property
+	def name(self):
+		return self._name
+	
+	@property
+	def id(self):
+		return self._id
+	
+	@property
+	def raw(self):
+		return self._raw_data
+	
+	def __str__(self):
+		return str(self.raw)
 
 
 check_def = AutoOrderedDict(check_def, check_conf_items)
 conf = MyConfig()
-BASE_END_POINT_URL = '/v1/pages/%s/' % conf.page_id
+BASE_END_POINT_URL = '/v1/pages/%s/'
 
 
 class StatusPageIoInterface(object):
@@ -198,12 +239,17 @@ class StatusPageIoInterface(object):
 	COMPONENT_BASE_URL = 'components/%s.json'
 	COMPONENTS_URL = 'components.json'
 	
+	_components_cache = None
 	_check_cache = None
+	_use_https = True
 	
-	def __init__(self, inst_conf=MyConfig()):
+	__check_title_max_len = 0
+	
+	def __init__(self, inst_conf=MyConfig(), https=True):
+		self._use_https = https
 		self._conf = inst_conf
 	
-	def send(self, endpoint, data=None, method=HTTPMethods.GET):
+	def _send(self, endpoint, data=None, method=HTTPMethods.GET):
 		""" send a query to the StatusPage.io api using conf.api_bas_url
 
 		:type endpoint: str
@@ -212,20 +258,36 @@ class StatusPageIoInterface(object):
 		"""
 		import httplib
 		import urllib
-		# import time
-		# ts = int(time.time())
+
 		data = data or dict()
 		assert isinstance(data, dict)
-		assert method in HTTPMethods.all
+		assert method in HTTPMethods()
 		params = urllib.urlencode(data)
 		headers = {"Content-Type": "application/x-www-form-urlencoded", "Authorization": "OAuth " + self._conf.api_key}
 		
-		conn = httplib.HTTPSConnection(self._conf.api_base_url)
-		conn.request(method, BASE_END_POINT_URL + endpoint, params, headers)
+		connector = httplib.HTTPSConnection if self._use_https else httplib.HTTPConnection
+		conn = connector(self._host_url)
+		conn.request(method, self._gen_url(endpoint), params, headers)
 		response = conn.getresponse()
 		
-		print "Submitted %s to %s" % (data, endpoint)
+		proto, method = TermColoring.bold("HTTPS" if self._use_https else 'HTTP'), TermColoring.bold(method)
+		full_url, status = self._host_url + self._gen_url(endpoint), TermColoring.bold(response.status)
+		print "%s %s %s %s HTTP %s %s" % (proto, full_url, method, data, status, response.length)
 		return response
+	
+	# clem 10/11/2016
+	@property
+	def _base_end_point_url(self):
+		return BASE_END_POINT_URL % self._conf.page_id
+	
+	# clem 10/11/2016
+	@property
+	def _host_url(self):
+		return self._conf.api_base_url
+	
+	# clem 10/11/2016
+	def _gen_url(self, url):
+		return self._base_end_point_url + url
 	
 	@property
 	def _component_base_url(self):
@@ -235,17 +297,32 @@ class StatusPageIoInterface(object):
 		return self._component_base_url % component_id
 	
 	def component_update(self, component_id, data):
-		return self.send(self._component_url(component_id), data, HTTPMethods.PATCH)
+		return self._send(self._component_url(component_id), data, HTTPMethods.PATCH)
 
 	def get_component_status(self, component_id):
-		return json.load(self.send(self._component_url(component_id), method=HTTPMethods.GET))['status']
+		return json.load(self._send(self._component_url(component_id), method=HTTPMethods.GET))['status']
 	
 	@property
-	def components_list(self):
-		return json.load(self.send(self.COMPONENTS_URL))
+	def _legacy_components_list(self):
+		return json.load(self._send(self.COMPONENTS_URL))
+	
+	# clem 10/11/2016
+	def _update_components(self):
+		a_dict = dict()
+		a_list = self._legacy_components_list
+		for each in a_list:
+			a_dict.update({each['id']: Component(each)})
+		return a_dict
+	
+	# clem 10/11/2016
+	@property
+	def components_dict(self):
+		if not self._components_cache:
+			self._components_cache = self._update_components()
+		return self._components_cache
 	
 	def show_components(self):
-		a_list = self.components_list
+		a_list = self._legacy_components_list
 		for each in a_list:
 			print each['id'], each
 	
@@ -262,7 +339,7 @@ class StatusPageIoInterface(object):
 		inner_callback = callbacks[1]
 		footer_callback = callbacks[2]
 		
-		a_list = self.components_list
+		a_list = self._legacy_components_list
 		for each in a_list:
 			sec_title = '%s%s' % (conf.SECTION_CHECKS_UNIT_PREFIX, each['id'])
 			if sec_title not in conf.sections:
@@ -300,15 +377,22 @@ class StatusPageIoInterface(object):
 		self._gen_config_generator((header, inner, footer))
 		conf.save()
 
-	def update_check(self, check_instance, state):
+	def update_check(self, check_instance, status, force=False):
 		""" Update the status of one check, state has to be a value of CheckStates
 		
 		:type check_instance: CheckObject
-		:type state: str
+		:type status: str
+		:type force: bool
 		:rtype:
 		"""
 		assert isinstance(check_instance, CheckObject)
-		return self.component_update(check_instance.id, {'component[status]': state})
+		a_component = self.components_dict.get(check_instance.id, Component())
+		if force or a_component.status != status:
+			response = self.component_update(check_instance.id, {'component[status]': status})
+			if response.status == 200:
+				a_component.status = status
+			return response
+		return False
 	
 	# clem 10/11/2016
 	def set_check_value(self, check_instance, value=False):
@@ -318,7 +402,7 @@ class StatusPageIoInterface(object):
 		:type value: bool
 		"""
 		assert isinstance(check_instance, CheckObject)
-		self.update_check(check_instance, CheckStates.OPERATIONAL if value else CheckStates.MAJOR_OUT)
+		return self.update_check(check_instance, CheckStates.OPERATIONAL if value else CheckStates.MAJOR_OUT)
 	
 	@property
 	def checks_dict(self):
@@ -340,19 +424,37 @@ class StatusPageIoInterface(object):
 			else:
 				Thread(target=callback, args=(key, check_instance)).start()
 	
+	# clem 10/11/2016
+	@property
+	def _check_title_max_len(self):
+		""" :return: the lenght of the longest title from all checks """
+		if not self.__check_title_max_len:
+			self.__check_title_max_len = 0
+			
+			def sub(_, check_instance):
+				if len(check_instance.name) > self.__check_title_max_len:
+					self.__check_title_max_len = len(check_instance.name)
+			
+			self.__check_apply(sub)
+		return self.__check_title_max_len
+	
 	def show_checks(self):
 		def sub(key, check_instance):
 			print key, ':', check_instance
 		self.__check_apply(sub)
 	
 	def check_all(self, update=False, threading=False):
+		def rightly_padded_instance_name(instance_name):
+			format_str = '{:<%s}' % (self._check_title_max_len + 1 + len(TermColoring.underlined('')))
+			return format_str.format(TermColoring.underlined(instance_name))
+		
 		def update_check(check_instance, old_status, new_status):
 			old_stat_text = check_instance.status_text(old_status)
 			old_stat_text = TermColoring.fail(old_stat_text) if not old_status else TermColoring.ok_green(old_stat_text)
 			
 			new_stat_text = check_instance.textual_status
 			new_stat_text = TermColoring.fail(new_stat_text) if not new_status else TermColoring.ok_green(new_stat_text)
-			print '%s went from %s to %s' % (TermColoring.underlined(check_instance.name), old_stat_text, new_stat_text)
+			print '%s : %s => %s' % (rightly_padded_instance_name(check_instance.name), old_stat_text, new_stat_text)
 			self.set_check_value(check_instance, new_status)
 		
 		def sub(_, check_instance):
@@ -409,6 +511,7 @@ class Watcher(object):
 	
 	@classmethod # TODO make a loop decorator
 	def loop(cls):
+		_ = cls._interface.components_dict
 		try:
 			while True:
 				cls._counter += 1
