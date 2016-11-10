@@ -177,6 +177,7 @@ class MyConfig(ConfigObject):
 		return self.get(self.KEY_PAGE_ID)
 
 
+# TODO
 class Component(object):
 	"""
 	ypkdj35tpnkz {u'status': u'operational', u'description': None, u'created_at': u'2016-10-28T09:34:54.006Z',
@@ -255,7 +256,7 @@ class StatusPageIoInterface(object):
 		:type callbacks: tuple[callable[str], callable[str, k, v], callable]
 		"""
 		assert isinstance(callbacks, tuple) and len(callbacks) == 3 and callable(callbacks[0]) and \
-				callable(callbacks[1]) and callable(callbacks[2])
+			callable(callbacks[1]) and callable(callbacks[2])
 		
 		header_callback = callbacks[0]
 		inner_callback = callbacks[1]
@@ -326,7 +327,7 @@ class StatusPageIoInterface(object):
 			res = dict()
 			for each in self._conf.sections.filter(self._conf.SECTION_CHECKS_UNIT_PREFIX):
 				check_id = SupStr(each) - self._conf.SECTION_CHECKS_UNIT_PREFIX
-				res.update({check_id: CheckObject(self._conf.section(each), check_id) })
+				res.update({check_id: CheckObject(self._conf.section(each), check_id)})
 			self._check_cache = res
 		return self._check_cache
 	
@@ -344,7 +345,16 @@ class StatusPageIoInterface(object):
 			print key, ':', check_instance
 		self.__check_apply(sub)
 	
-	def check_all(self, update=False, threading=True):
+	def check_all(self, update=False, threading=False):
+		def update_check(check_instance, old_status, new_status):
+			old_stat_text = check_instance.status_text(old_status)
+			old_stat_text = TermColoring.fail(old_stat_text) if not old_status else TermColoring.ok_green(old_stat_text)
+			
+			new_stat_text = check_instance.textual_status
+			new_stat_text = TermColoring.fail(new_stat_text) if not new_status else TermColoring.ok_green(new_stat_text)
+			print '%s went from %s to %s' % (TermColoring.underlined(check_instance.name), old_stat_text, new_stat_text)
+			self.set_check_value(check_instance, new_status)
+		
 		def sub(_, check_instance):
 			assert isinstance(check_instance, CheckObject)
 			if check_instance.enabled:
@@ -352,18 +362,10 @@ class StatusPageIoInterface(object):
 				new_status = check_instance.check()
 				if update:
 					if new_status != old_status:
-						old_stat_text = check_instance.status_text(old_status)
-						old_stat_text = TermColoring.fail(old_stat_text) if not old_status else TermColoring.ok_green(
-							old_stat_text)
-						
-						new_stat_text = check_instance.textual_status
-						new_stat_text = TermColoring.fail(new_stat_text) if not new_status else \
-							TermColoring.ok_green(new_stat_text)
-						print '%s went from %s to %s' % \
-							(TermColoring.underlined(check_instance.name), old_stat_text, new_stat_text)
-						self.set_check_value(check_instance, new_status)
+						update_check(check_instance, old_status, new_status)
 				else:
 					print check_instance.name, ':', new_status
+		
 		self.__check_apply(sub, threading)
 		
 	def update_all(self):
