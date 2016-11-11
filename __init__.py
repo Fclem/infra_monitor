@@ -11,6 +11,7 @@ __date__ = '09/11/2016'
 # clem 11/11/2016
 __config_cache = None
 CONFIG_FILE_NAME = 'config.ini'
+DEFAULT_REFRESH = 30.
 
 
 #########
@@ -207,7 +208,7 @@ class MyConfig(ConfigObject):
 	
 	# 11/11/2016
 	@property
-	def refresh_interval(self): return float(self.get(self.KEY_REFRESH_INTERVAL))
+	def refresh_interval(self): return float(self.get(self.KEY_REFRESH_INTERVAL)) or DEFAULT_REFRESH
 	
 	################
 	# CUSTOM PROPS #
