@@ -143,7 +143,7 @@ class FunctionEnum(SpecialEnum):
 	def enum_functions(cls):
 		a_dict = cls.enum_dict()
 		for key, value in a_dict.iteritems():
-			if type(value) is [staticmethod, classmethod]:
+			if type(value) in [staticmethod, classmethod]:
 				a_dict[key] = value.__func__
 		return a_dict
 	
