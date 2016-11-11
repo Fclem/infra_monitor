@@ -631,8 +631,7 @@ class StatusPageIoInterface(ServiceInterfaceAbstract):
 # clem 10/11/2016
 class Watcher(object):
 	""" a static class that monitors indefinitely all enabled checks and update them at a specific interval """
-	_interface = StatusPageIoInterface(get_config())
-	# _interface.init_all_check_down()
+	_interface = None # StatusPageIoInterface(get_config())
 	_counter = 0
 	_wait_interval = get_config().refresh_interval # in seconds
 	_wait_resolution = .5 # in seconds
@@ -672,6 +671,7 @@ class Watcher(object):
 
 def main():
 	# runs the watcher loop
+	Watcher._interface = StatusPageIoInterface(get_config())
 	return Watcher.loop()
 
 if __name__ == '__main__':
