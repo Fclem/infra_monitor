@@ -470,7 +470,9 @@ class StatusPageIoInterface(ServiceInterfaceAbstract):
 	
 	_components_cache = None
 	
-	def __init__(self, inst_conf=get_config()): super(StatusPageIoInterface, self).__init__(inst_conf)
+	def __init__(self, inst_conf=get_config()):
+		super(StatusPageIoInterface, self).__init__(inst_conf)
+		_ = self.components_dict
 		
 	def _send(self, endpoint, data=None, method=HTTPMethods.GET):
 		""" send a query to the StatusPage.io api using conf.api_bas_url
@@ -655,7 +657,6 @@ class Watcher(object):
 	
 	@classmethod # TODO make a loop decorator
 	def loop(cls):
-		_ = cls._interface.components_dict
 		try:
 			while True:
 				cls._counter += 1
