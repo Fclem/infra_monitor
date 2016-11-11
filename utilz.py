@@ -83,22 +83,71 @@ class AutoOrderedDict(OrderedDict):
 
 # clem 10/11/2016
 class SpecialEnum(object):
-	@property
-	def _list_enum_values(self):
-		a_list = list()
-		for key, value in self.__class__.__dict__.iteritems():
-			if not key.startswith('_') and key.upper() == key:
-				a_list.append(value)
-		return a_list
+	# clem 11/11/2016
+	@staticmethod # test
+	def __visible_test(key): return not key.startswith('_')
 	
-	@property
-	def _all(self):
-		return self._list_enum_values
+	# clem 11/11/2016
+	@staticmethod # test
+	def __enum_test(key): return not key.startswith('_') and key.upper() == key
 	
-	def __contains__(self, item):
-		return item in self._all
+	# clem 11/11/2016
+	@staticmethod # accessor
+	def __get_all_filter(obj, key_pass_test=None):
+		key_pass_test = key_pass_test if callable(key_pass_test) else lambda *_: True
+		
+		a_dict = dict()
+		for key, value in obj.iteritems():
+			if key_pass_test(key):
+				a_dict.update({key: value})
+		return a_dict
 	
+	# clem 11/11/2016
+	@classmethod # proxy
+	def all_dict(cls, my_test=None): return cls.__get_all_filter(cls.__dict__, my_test)
+	
+	# clem 11/11/2016
+	@classmethod # proxy
+	def enum_dict(cls): return cls.all_dict(cls.__visible_test)
+	
+	########
+	# KEYS #
+	########
+		
+	# clem 11/11/2016
+	# @classmethod # proxy
+	# def all_keys(cls): return cls.all_dict().keys()
+	
+	# clem 11/11/2016
+	# @classmethod # proxy
+	# def enum_keys(cls): return cls.enum_dict().keys()
+	
+	##########
+	# VALUES #
+	##########
+	
+	# clem 11/11/2016
+	# @classmethod # proxy
+	# def all_values(cls): return cls.all_dict().values()
+	
+	# clem 11/11/2016
+	# @classmethod # proxy
+	# def enum_values(cls): return cls.enum_dict().values()
+	
+	def __contains__(self, item): return item in self.enum_dict().values()
 
+
+# clem 11/11/2016
+class FunctionEnum(SpecialEnum):
+	@classmethod # proxy
+	def enum_functions(cls):
+		a_dict = cls.enum_dict()
+		for key, value in a_dict.iteritems():
+			if type(value) is [staticmethod, classmethod]:
+				a_dict[key] = value.__func__
+		return a_dict
+	
+	
 ##################
 # HELPER OBJECTS #
 ##################
