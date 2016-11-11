@@ -173,6 +173,7 @@ class MyConfig(ConfigObject):
 	KEY_HTTP_MODE = 'http_mode'
 	KEY_CONF_ITEMS = 'conf_items'
 	KEY_ITEMS_PREFIX = 'items_prefix'
+	KEY_REFRESH_INTERVAL = 'refresh_interval'
 	
 	SECTION_ITEMS_DEFAULTS_KEY = 'CONF_ITEMS_DEFAULTS'
 	
@@ -203,6 +204,10 @@ class MyConfig(ConfigObject):
 	
 	@property
 	def section_items_prefix(self): return self.get(self.KEY_ITEMS_PREFIX)
+	
+	# 11/11/2016
+	@property
+	def refresh_interval(self): return float(self.get(self.KEY_REFRESH_INTERVAL))
 	
 	################
 	# CUSTOM PROPS #
@@ -626,7 +631,7 @@ class Watcher(object):
 	_interface = StatusPageIoInterface(get_config())
 	# _interface.init_all_check_down()
 	_counter = 0
-	_wait_interval = 10. # in seconds
+	_wait_interval = get_config().refresh_interval # in seconds
 	_wait_resolution = .5 # in seconds
 	_timer = _wait_interval
 	
