@@ -655,8 +655,10 @@ class Watcher(object):
 				cls._timer -= cls._wait_resolution
 	
 	@classmethod # TODO make a loop decorator
-	def loop(cls):
+	def loop(cls, interface):
+		assert isinstance(interface, ServiceInterfaceAbstract)
 		try:
+			cls._interface = interface
 			while True:
 				cls._counter += 1
 				print 'Checking round %s ...' % cls._counter
@@ -671,8 +673,7 @@ class Watcher(object):
 
 def main():
 	# runs the watcher loop
-	Watcher._interface = StatusPageIoInterface(get_config())
-	return Watcher.loop()
+	return Watcher.loop(StatusPageIoInterface(get_config()))
 
 if __name__ == '__main__':
 	exit(0 if main() else 1)
