@@ -181,7 +181,8 @@ class IncPrint(object):
 		sys.stdout.flush()
 	
 	def __exit__(self, exc_type, exc_val, exc_tb):
-		sys.stdout.write('\033[2K\b\b')
+		# sys.stdout.write('\033[2K\b\b')
+		sys.stdout.write('\033[2K')
 		sys.stdout.flush()
 
 
