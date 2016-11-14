@@ -173,6 +173,7 @@ class MyConfig(ConfigObject):
 	KEY_API_KEY = 'api_key'
 	KEY_PAGE_ID = 'page_id'
 	KEY_API_URL = 'api_url'
+	KEY_API_DATA = 'api_data'
 	KEY_API_BASE = 'api_base'
 	KEY_HTTP_MODE = 'http_mode'
 	KEY_CONF_ITEMS = 'conf_items'
@@ -200,6 +201,10 @@ class MyConfig(ConfigObject):
 	
 	@property
 	def api_url_path_base(self): return self.get(self.KEY_API_URL)
+	
+	# clem 14/11/2016
+	@property
+	def api_data(self): return self.get(self.KEY_API_DATA)
 	
 	@property
 	def http_mode(self): return self.get(self.KEY_HTTP_MODE)
