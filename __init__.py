@@ -78,16 +78,18 @@ class CheckObject(object): # Thread Safe
 	_last_status = None
 	_thread_lock = None
 	_check_def = None
+	_config = None
 	ON_TEXT = 'ONLINE'
 	OFF_TEXT = 'OFFLINE'
 	UNK_TEXT = 'UNKNOWN'
 	
 	_checker_dict = Checkers.enum_functions() # {'url': Checkers.url, 'tcp': Checkers.tcp, 'ping': Checkers.ping}
 	
-	def __init__(self, a_tuple_list, res_id=None): # Thread Safe
+	def __init__(self, a_tuple_list, res_id=None, config=None): # Thread Safe
 		assert isinstance(a_tuple_list, list)
 		self._thread_lock = AutoLock()
-		self._check_def = get_config().check_items_default_values_dict
+		self._config = config or get_config()
+		self._check_def = self._config.check_items_default_values_dict
 		with self._thread_lock as _:
 			self.__dict__.update(self._check_def)
 			for each in a_tuple_list:
@@ -123,6 +125,11 @@ class CheckObject(object): # Thread Safe
 	@property
 	def check_validation_data(self):
 		return self._pass_t
+	
+	# clem 14/11/2016
+	@property
+	def check_api_key(self):
+		return self.__dict__.get('_%s' % self._config.KEY_API_KEY, self._config.api_key)
 	
 	@property
 	def data_dict(self):
@@ -176,7 +183,8 @@ class MyConfig(ConfigObject):
 	KEY_ITEMS_PREFIX = 'items_prefix'
 	KEY_REFRESH_INTERVAL = 'refresh_interval'
 	
-	SECTION_ITEMS_DEFAULTS_KEY = 'CONF_ITEMS_DEFAULTS'
+	SECTION_ITEMS_DEFAULTS_KEY = 'DEFAULT'
+	CONFIG_GENERAL_SECTION = 'SYSTEM'
 	
 	_check_items_defaults = dict()
 	__config_cache = None
@@ -230,7 +238,8 @@ class MyConfig(ConfigObject):
 	@property
 	def api_full_url_base(self):
 		""" full url including host """
-		return '%s/%s' % (self.api_host_name, self.api_url_path_base)
+		sup = '/' if not self.api_host_name.endswith('/') and not self.api_url_path_base.startswith('/') else ''
+		return '%s%s%s' % (self.api_host_name, sup, self.api_url_path_base)
 	
 
 # clem 11/11/2016
@@ -337,7 +346,7 @@ class HTTPSenderAbstract(object):
 		
 		proto, method = TermColoring.bold("HTTPS" if self._use_https else 'HTTP'), TermColoring.bold(method)
 		status = TermColoring.bold(response.status)
-		print "%s %s %s %s HTTP %s %s" % (proto, host + url, method, data, status, response.length)
+		print "%s %s %s %s HTTP %s %s" % (proto, '%s%s' % (host, url), method, data, status, response.length)
 		return response
 	
 	@abc.abstractmethod
@@ -356,7 +365,7 @@ class HTTPSenderAbstract(object):
 	
 	# clem 10/11/2016
 	@abc.abstractmethod
-	def _gen_url(self, url):
+	def _gen_url(self, *args, **kwargs):
 		""" would usually return self._base_end_point_url + url """
 
 
@@ -380,6 +389,15 @@ class ServiceInterfaceAbstract(HTTPSenderAbstract):
 
 		:type check_instance: CheckObject
 		:type value: bool
+		"""
+	
+	@abc.abstractmethod
+	def no_status_change(self, check_instance, old_status, new_status):
+		""" If you need to trigger some action if the status doesn't change at regular interval (i.e. heart-beat)
+
+		:type check_instance: CheckObject
+		:type old_status: bool
+		:type new_status: bool
 		"""
 	
 	@property
@@ -454,7 +472,10 @@ class ServiceInterfaceAbstract(HTTPSenderAbstract):
 			if check_instance.enabled:
 				old_status, new_status = check_instance.last_status, check_instance.check()
 				
-				calling = self._print_check_stat if not update else _update_check if new_status != old_status else _nop
+				if update:
+					calling = _update_check if new_status != old_status else self.no_status_change
+				else:
+					calling = self._print_check_stat
 				calling(check_instance, old_status, new_status)
 		
 		self.__check_apply(sub, threading)
@@ -511,7 +532,13 @@ class StatusPageIoInterface(ServiceInterfaceAbstract):
 		return json.load(self._send(self._component_url(component_id), method=HTTPMethods.GET))['status']
 	
 	@property
-	def _legacy_components_list(self): return json.load(self._send(self.COMPONENTS_URL))
+	def _legacy_components_list(self):
+		obj = list()
+		try:
+			obj = json.load(self._send(self.COMPONENTS_URL))
+		except ValueError:
+			pass
+		return obj
 	
 	# clem 10/11/2016
 	def _update_components(self):
@@ -587,6 +614,9 @@ class StatusPageIoInterface(ServiceInterfaceAbstract):
 	###################
 	# IMPLEMENTATIONS #
 	###################
+	
+	def no_status_change(self, check_instance, old_status, new_status):
+		pass
 
 	def update_check(self, check_instance, status, force=False):
 		""" Update the status of one check, state has to be a value of CheckStates

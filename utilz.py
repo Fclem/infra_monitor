@@ -331,8 +331,9 @@ class ConfigObject(object):
 		:type section_name: str
 		:rtype: EnsList
 		"""
-		exclude = self._items(self.CONFIG_GENERAL_SECTION) if section_name != self.CONFIG_GENERAL_SECTION else list()
-		return self._items(section_name) - exclude
+		# exclude = self._items(self.CONFIG_GENERAL_SECTION) if section_name != self.CONFIG_GENERAL_SECTION else list()
+		# return self._items(section_name) - exclude
+		return self._items(section_name)
 	
 	def save(self):
 		self.config.write(open(self.config_file_path, 'w'))
